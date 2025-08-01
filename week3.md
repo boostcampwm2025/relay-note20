@@ -74,9 +74,9 @@ week2에 제시된 각 퀘스트에 대해서 개선할 부분 등을 논의한�
 > - [ ] (주제 무관) 해당 페르소나와 가볍게 대화를 나누고, 그 내용을 슬랙 `#2_random 채널에 공유한다.`
 
 ### 수행 예시
-![1ABA5501-7C3F-44CF-AD81-01BE3EA7DE00](https://github.com/user-attachments/assets/94dc48a6-77c9-42a2-8ccd-8cbc732aebb8)
-
-![318FDA52-C33F-407A-9663-E9FFE23A9753](https://github.com/user-attachments/assets/42713380-b757-4f21-bd46-0a622e442019)
+#### 욕쟁이 할머니 페르소나
+<img width="600" alt="image" src="https://github.com/user-attachments/assets/21a0bd07-aeff-46b6-9a9a-5bdfa65f5577" />
+<img width="600" alt="image" src="https://github.com/user-attachments/assets/37324684-d0e8-49bb-80bc-eadea399dc76" />
 
 
 ## 2.2. 퀘스트2: 

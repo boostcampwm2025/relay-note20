@@ -554,7 +554,7 @@ Git은 파일의 **내용 기반 SHA 해시값**을 기준으로 변경 여부�
 보상 아이템인 +10 여유력, +5 창의력, "기분이 나른하다냥" 버프 1시간 지속도 무사히 잘 받았습니다!
 
 <img width="418" height="569" alt="image" src="https://gist.github.com/user-attachments/assets/2807585f-574b-4aad-98b6-51c623b93796" />
-
+</details>
 ---
 
 ## Week2 미션 수행 후 느낀점

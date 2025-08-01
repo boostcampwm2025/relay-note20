@@ -228,154 +228,145 @@
 **선택 이유** : 간혹 피어 피드백 시간에 이야기할 주제가 없어질 때가 있습니다. 남은 시간을 좀 더 잘 활용하기 위한 방안으로 해당 퀘스트를 선택했습니다. 학습목표에 맞게 이번 미션에서 되짚어보면 좋을 개념들에 대해 다시 돌아볼 수 있고, 또 더 나아가 생각 못했던 부분을 같이 논의해볼 수 있을 것 같습니다. 매일 있는 피어 피드백 시간을 좀 더 학습관련하여 소통하며 쓸 수 있을 것 같습니다.
 
 진행 과정
-    <details>
-        <summary>Day11-12</summary>
-        ### 🔹 **동시성 제어 방법**
+<details>
+    <summary>Day11-12</summary>
+    ### 🔹 **동시성 제어 방법**
     
-    - 변환 모듈에서 2개 동시 처리 제약을 어떻게 구현했는가?
-        - `Semaphore`, `Channel`, `MutableState`, `Mutex` 등
-    - 코루틴이 병렬 처리되는 지점에서 race condition이 발생한 적 있는가?
-    - 찾아본 내용
+- 변환 모듈에서 2개 동시 처리 제약을 어떻게 구현했는가?
+     - `Semaphore`, `Channel`, `MutableState`, `Mutex` 등
+- 코루틴이 병렬 처리되는 지점에서 race condition이 발생한 적 있는가?
+- 찾아본 내용
+
+    ## ✅ 1. **Semaphore**
+
+  ### 📌 설명
         
-        ## ✅ 1. **Semaphore**
+  `Semaphore`는 제한된 수의 허가(permit)를 제공해서, 동시에 수행 가능한 작업 수를 제어합니다.
         
-        ### 📌 설명
+  ### 📌 사용하는 방식
         
-        `Semaphore`는 제한된 수의 허가(permit)를 제공해서, 동시에 수행 가능한 작업 수를 제어합니다.
+  ```kotlin
+  val semaphore = Semaphore(2)
         
-        ### 📌 사용하는 방식
+  launch {
+      semaphore.acquire()
+      try {
+          convert(video) // 변환 작업
+      } finally {
+          semaphore.release()
+      }
+  }
         
-        ```kotlin
-        kotlin
-        복사편집
-        val semaphore = Semaphore(2)
+  ```
         
-        launch {
-            semaphore.acquire()
-            try {
-                convert(video) // 변환 작업
-            } finally {
-                semaphore.release()
+  ### 📌 사용하는 이유
+        
+  - 가장 직관적이고 간단하게 최대 동시 실행 수를 제한할 수 있음.
+  - 시스템 전반에서 변환 개수만 제어하고 싶을 때 적합.
+  - permit 수를 유동적으로 조절할 수도 있음.
+        
+  ---
+        
+    ## ✅ 2. **Channel (with capacity = 2)**
+        
+  ### 📌 설명
+        
+  `Channel`은 코루틴 사이에서 데이터를 주고받을 수 있는 큐입니다. `Buffered Channel`로 설정하면 capacity만큼 동시에 처리 가능하게 만들 수 있습니다.
+        
+  ### 📌 사용하는 방식
+        
+  ```kotlin
+  val convertChannel = Channel<Video>(capacity = 2)
+        
+  repeat(2) {
+       launch {
+           for (video in convertChannel) {
+              convert(video)
+          }
+      }
+  }
+        
+  launch {
+       videos.forEach {
+           convertChannel.send(it)
+       }
+  }
+        
+  ```
+        
+  ### 📌 사용하는 이유
+        
+  - 동시에 최대 2개의 소비자만 작업을 처리하도록 제한할 수 있음.
+    - 생산자-소비자 패턴에 적합.
+    - 큐에 쌓이는 순서를 보장하면서 처리 가능.
+        
+    ---
+     
+     ## ✅ 3. **MutableState (e.g., MutableStateFlow or custom Int count)**
+       
+       ### 📌 설명
+    `MutableState` 계열은 상태를 관찰하고 갱신할 수 있도록 해줍니다. 동시 작업 수를 변수로 직접 관리할 수 있습니다.
+      
+     ### 📌 사용하는 방식 (간단 예시)
+     
+    ```kotlin
+    var activeCount = 0
+   
+     suspend fun safeConvert(video: Video) {
+        while (activeCount >= 2) delay(100)
+        activeCount++
+        convert(video)
+        activeCount--
+     }
+        
+     ```
+        
+     ### 📌 사용하는 이유
+     
+     - 구조가 단순하고 직접 컨트롤할 수 있음.
+     - 하지만 **race condition에 취약**하며, 원자성 보장이 없음 → 실전에서는 `Mutex`와 함께 써야 안전.
+        
+    ---
+        
+      ## ✅ 4. **Mutex**
+        
+     ### 📌 설명
+        
+     `Mutex`는 **critical section**을 보호하기 위해 사용됩니다. 여러 코루틴이 공유 자원에 접근할 때 **동기화**를 보장합니다.
+        
+    ### 📌 사용하는 방식
+        
+      ```kotlin
+    val mutex = Mutex()
+    var activeCount = 0
+    
+    suspend fun safeConvert(video: Video) {
+        mutex.withLock {
+            while (activeCount >= 2) {
+                mutex.unlock()
+                delay(100)
+                mutex.lock()
             }
-        }
-        
-        ```
-        
-        ### 📌 사용하는 이유
-        
-        - **가장 직관적이고 간단**하게 최대 동시 실행 수를 제한할 수 있음.
-        - 시스템 전반에서 **변환 개수만 제어하고 싶을 때 적합**.
-        - permit 수를 유동적으로 조절할 수도 있음.
-        
-        ---
-        
-        ## ✅ 2. **Channel (with capacity = 2)**
-        
-        ### 📌 설명
-        
-        `Channel`은 코루틴 사이에서 데이터를 주고받을 수 있는 큐입니다. `Buffered Channel`로 설정하면 capacity만큼 동시에 처리 가능하게 만들 수 있습니다.
-        
-        ### 📌 사용하는 방식
-        
-        ```kotlin
-        kotlin
-        복사편집
-        val convertChannel = Channel<Video>(capacity = 2)
-        
-        repeat(2) {
-            launch {
-                for (video in convertChannel) {
-                    convert(video)
-                }
-            }
-        }
-        
-        launch {
-            videos.forEach {
-                convertChannel.send(it)
-            }
-        }
-        
-        ```
-        
-        ### 📌 사용하는 이유
-        
-        - 동시에 최대 2개의 소비자만 작업을 처리하도록 제한할 수 있음.
-        - **생산자-소비자 패턴**에 적합.
-        - 큐에 쌓이는 순서를 보장하면서 처리 가능.
-        
-        ---
-        
-        ## ✅ 3. **MutableState (e.g., MutableStateFlow or custom Int count)**
-        
-        ### 📌 설명
-        
-        `MutableState` 계열은 상태를 관찰하고 갱신할 수 있도록 해줍니다. 동시 작업 수를 변수로 직접 관리할 수 있습니다.
-        
-        ### 📌 사용하는 방식 (간단 예시)
-        
-        ```kotlin
-        kotlin
-        복사편집
-        var activeCount = 0
-        
-        suspend fun safeConvert(video: Video) {
-            while (activeCount >= 2) delay(100)
             activeCount++
-            convert(video)
+         }
+        
+        convert(video)
+        
+        mutex.withLock {
             activeCount--
         }
+    }
         
-        ```
+    ```
         
-        ### 📌 사용하는 이유
+    ### 📌 사용하는 이유
         
-        - 구조가 단순하고 직접 컨트롤할 수 있음.
-        - 하지만 **race condition에 취약**하며, 원자성 보장이 없음 → 실전에서는 `Mutex`와 함께 써야 안전.
-        
-        ---
-        
-        ## ✅ 4. **Mutex**
-        
-        ### 📌 설명
-        
-        `Mutex`는 **critical section**을 보호하기 위해 사용됩니다. 여러 코루틴이 공유 자원에 접근할 때 **동기화**를 보장합니다.
-        
-        ### 📌 사용하는 방식
-        
-        ```kotlin
-        kotlin
-        복사편집
-        val mutex = Mutex()
-        var activeCount = 0
-        
-        suspend fun safeConvert(video: Video) {
-            mutex.withLock {
-                while (activeCount >= 2) {
-                    mutex.unlock()
-                    delay(100)
-                    mutex.lock()
-                }
-                activeCount++
-            }
-        
-            convert(video)
-        
-            mutex.withLock {
-                activeCount--
-            }
-        }
-        
-        ```
-        
-        ### 📌 사용하는 이유
-        
-        - `MutableState`처럼 직접 상태를 관리하면서도 **동기화를 보장**하고 싶을 때 사용.
-        - 정확한 **제어가 필요할 때**, 혹은 복잡한 조건이 들어갈 때 적합.
-        
-        ---
-        
-        ## 🔍 요약 비교표
+    - `MutableState`처럼 직접 상태를 관리하면서도 **동기화를 보장**하고 싶을 때 사용.
+    - 정확한 **제어가 필요할 때**, 혹은 복잡한 조건이 들어갈 때 적합.
+    
+    ---
+    
+     ## 🔍 요약 비교표
         
         | 방식 | 최대 동시 처리 제한 | 장점 | 단점 | 적합 상황 |
         | --- | --- | --- | --- | --- |
@@ -384,86 +375,86 @@
         | `MutableState` | 🚫 직접 구현 필요 | 구조 단순 | race condition 위험 있음 | 프로토타입 |
         | `Mutex` | ✅ 가능 | 동기화 안전성 보장 | 코드 복잡도 증가 | 정밀 제어 필요 시 |
         
-        ---
+    ---
         
-        ## ✨ 결론
+    ## ✨ 결론
+      
+     Boostcamp 미션에서 "변환 모듈에서 동시에 2개만 처리"라는 조건을 만족시키려면 **`Semaphore` 또는 `Channel(capacity = 2)`** 방식이 가장 일반적이고 추천됩니다.
+     
+   필요에 따라 `MutableState + Mutex` 조합도 가능하지만, 실수로 인해 race condition이 생길 수 있으므로 **동시성 제어에 익숙하지 않다면 `Semaphore`가 가장 안전한 선택**입니다.
         
-        Boostcamp 미션에서 "변환 모듈에서 동시에 2개만 처리"라는 조건을 만족시키려면 **`Semaphore` 또는 `Channel(capacity = 2)`** 방식이 가장 일반적이고 추천됩니다.
-        
-        필요에 따라 `MutableState + Mutex` 조합도 가능하지만, 실수로 인해 race condition이 생길 수 있으므로 **동시성 제어에 익숙하지 않다면 `Semaphore`가 가장 안전한 선택**입니다.
-        
-        원하는 방식이 있으면 예시 코드 같이 구현해줄게!
-    </details>
-    <details>
-        <summary>Day13-14</summary>
-        1. Git Workflow 전략 (협업 브랜치 전략)
-    왜 논의할 만한가?
-    실제 프로젝트에서는 여러 명이 동시에 작업하므로 체계적인 브랜치 전략이 필요합니다. 팀원들이 어떤 전략을 사용하는지, 장단점은 뭔지 비교해보면 좋습니다.
-    
-    대표적인 브랜치 전략들:
-    
-    Git Flow
-    
-    브랜치: main, develop, feature, release, hotfix
-    
-    장점: 역할 분담이 명확하고, 릴리즈 주기가 긴 서비스에 적합
-    
-    단점: 브랜치가 많아 복잡해질 수 있음
-    
-    GitHub Flow
-    
-    브랜치: main + feature 브랜치
-    
-    장점: 간단하고 빠른 배포 주기에 적합 (CI/CD와 잘 어울림)
-    
-    단점: 릴리즈 구분이 모호할 수 있음
-    
-    Trunk-based Development
-    
-    브랜치: 거의 모든 작업을 main에서 진행하며, 매우 짧은-lived 브랜치만 사용
-    
-    장점: 속도와 단순함에 집중
-    
-    단점: 실험적인 작업이 main에 바로 병합되면 위험
-    
-    토의 예시 질문:
-    
-    여러분 팀은 어떤 브랜치 전략을 써봤나요?
-    
-    큰 프로젝트에선 어떤 전략이 더 안전할까요?
-    
-    GitHub Flow의 빠른 리뷰 vs Git Flow의 명확한 릴리즈 구조, 어느 게 더 맞을까?
-    
-    2. Git Rebase vs Merge - 언제 어떤 걸 쓸까?
-    왜 논의할 만한가?
-    두 명령어 모두 브랜치를 통합하지만, 이력이 달라집니다. 협업 시 커밋 히스토리를 깔끔하게 유지할지, 이력 충돌을 방지할지를 두고 선택이 갈릴 수 있습니다.
-    
-    차이점 요약:
-    
-    구분	merge	rebase
-    이력	브랜치 합친 흔적을 남김 (merge commit)	이력을 재정렬하여 마치 순차적으로 작업한 것처럼 만듦
-    충돌 해결	병합 시 충돌 한 번 해결	커밋마다 충돌이 발생할 수 있음
-    협업 추천	협업 중인 브랜치엔 안전 (main)	로컬 브랜치에만 사용하는 것이 안전
-    Git log	브랜치 구조가 복잡해질 수 있음	히스토리가 깔끔하고 직선형
-    
-    실제 상황 예시:
-    
-    bash
-    복사
-    편집
-    # A 브랜치에서 작업 중인데 최신 main을 가져오려면?
-    git merge main     # merge 커밋이 생김
-    git rebase main    # A 브랜치의 커밋을 main 위로 재배치
-    토의 예시 질문:
-    
-    팀에서는 merge와 rebase 중 어떤 걸 선호하나요?
-    
-    git pull --rebase 옵션 써봤나요? 장단점은?
-    
-    커밋 히스토리를 깔끔하게 유지해야 하는 경우, 어느 쪽이 더 적합할까요?
-    
-    이 두 주제는 실제 협업에 바로 연관되기 때문에, 스터디에서 실무 경험 공유나 팀 컨벤션 정하기에도 아주 유용합니다. 원하시면 논의 주제에 맞는 예제 커밋 로그나 Git 시각화 도구 활용 방법도 알려드릴게요.
-    </details>
+   원하는 방식이 있으면 예시 코드 같이 구현해줄게!
+</details>
+<details>
+    <summary>Day13-14</summary>
+    1. Git Workflow 전략 (협업 브랜치 전략)
+왜 논의할 만한가?
+실제 프로젝트에서는 여러 명이 동시에 작업하므로 체계적인 브랜치 전략이 필요합니다. 팀원들이 어떤 전략을 사용하는지, 장단점은 뭔지 비교해보면 좋습니다.
+
+대표적인 브랜치 전략들:
+
+Git Flow
+
+브랜치: main, develop, feature, release, hotfix
+
+장점: 역할 분담이 명확하고, 릴리즈 주기가 긴 서비스에 적합
+
+단점: 브랜치가 많아 복잡해질 수 있음
+
+GitHub Flow
+
+브랜치: main + feature 브랜치
+
+장점: 간단하고 빠른 배포 주기에 적합 (CI/CD와 잘 어울림)
+
+단점: 릴리즈 구분이 모호할 수 있음
+
+Trunk-based Development
+
+브랜치: 거의 모든 작업을 main에서 진행하며, 매우 짧은-lived 브랜치만 사용
+
+장점: 속도와 단순함에 집중
+
+단점: 실험적인 작업이 main에 바로 병합되면 위험
+
+토의 예시 질문:
+
+여러분 팀은 어떤 브랜치 전략을 써봤나요?
+
+큰 프로젝트에선 어떤 전략이 더 안전할까요?
+
+GitHub Flow의 빠른 리뷰 vs Git Flow의 명확한 릴리즈 구조, 어느 게 더 맞을까?
+
+2. Git Rebase vs Merge - 언제 어떤 걸 쓸까?
+왜 논의할 만한가?
+두 명령어 모두 브랜치를 통합하지만, 이력이 달라집니다. 협업 시 커밋 히스토리를 깔끔하게 유지할지, 이력 충돌을 방지할지를 두고 선택이 갈릴 수 있습니다.
+
+차이점 요약:
+
+구분	merge	rebase
+이력	브랜치 합친 흔적을 남김 (merge commit)	이력을 재정렬하여 마치 순차적으로 작업한 것처럼 만듦
+충돌 해결	병합 시 충돌 한 번 해결	커밋마다 충돌이 발생할 수 있음
+협업 추천	협업 중인 브랜치엔 안전 (main)	로컬 브랜치에만 사용하는 것이 안전
+Git log	브랜치 구조가 복잡해질 수 있음	히스토리가 깔끔하고 직선형
+
+실제 상황 예시:
+
+bash
+복사
+편집
+# A 브랜치에서 작업 중인데 최신 main을 가져오려면?
+git merge main     # merge 커밋이 생김
+git rebase main    # A 브랜치의 커밋을 main 위로 재배치
+토의 예시 질문:
+
+팀에서는 merge와 rebase 중 어떤 걸 선호하나요?
+
+git pull --rebase 옵션 써봤나요? 장단점은?
+
+커밋 히스토리를 깔끔하게 유지해야 하는 경우, 어느 쪽이 더 적합할까요?
+
+이 두 주제는 실제 협업에 바로 연관되기 때문에, 스터디에서 실무 경험 공유나 팀 컨벤션 정하기에도 아주 유용합니다. 원하시면 논의 주제에 맞는 예제 커밋 로그나 Git 시각화 도구 활용 방법도 알려드릴게요.
+</details>
 <details>
     <summary>느낀점</summary>
 </details>
